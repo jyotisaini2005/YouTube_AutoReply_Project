@@ -1,5 +1,7 @@
 from googleapiclient.discovery import build
 from config import API_KEY
+from auto_reply import get_reply
+import sqlite3
 
 youtube = build(
     "youtube",
@@ -17,7 +19,24 @@ request = youtube.commentThreads().list(
 
 response = request.execute()
 
+conn = sqlite3.connect("youtube.db")
+cursor = conn.cursor()
+
 for item in response["items"]:
     comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
-    print(comment)
+
+    reply = get_reply(comment)
+
+    cursor.execute(
+        "INSERT INTO comments(comment, reply, video_id) VALUES (?, ?, ?)",
+        (comment, reply, video_id)
+    )
+
+    print("Comment:", comment)
+    print("Reply:", reply)
     print("----------------")
+
+conn.commit()
+conn.close()
+
+print("All comments saved to database!")
