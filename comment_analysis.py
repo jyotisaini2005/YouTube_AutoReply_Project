@@ -34,7 +34,6 @@ for item in response["items"]:
         positive_comments += 1
     elif polarity < 0:
         negative_comments += 1
-
 print("\nComment Analysis")
 print("----------------------")
 print("Total Comments:", total_comments)
