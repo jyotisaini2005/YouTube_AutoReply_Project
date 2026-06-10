@@ -23,14 +23,31 @@ conn = sqlite3.connect("youtube.db")
 cursor = conn.cursor()
 
 for item in response["items"]:
+
     comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
 
     reply = get_reply(comment)
 
+    # Check duplicate comment
     cursor.execute(
-        "INSERT INTO comments(comment, reply, video_id) VALUES (?, ?, ?)",
-        (comment, reply, video_id)
+        "SELECT * FROM comments WHERE comment=? AND video_id=?",
+        (comment, video_id)
     )
+
+    existing_comment = cursor.fetchone()
+
+    if existing_comment is None:
+
+        cursor.execute(
+            "INSERT INTO comments(comment, reply, video_id) VALUES (?, ?, ?)",
+            (comment, reply, video_id)
+        )
+
+        print("Saved to Database")
+
+    else:
+
+        print("Duplicate Comment Skipped")
 
     print("Comment:", comment)
     print("Reply:", reply)
@@ -39,4 +56,4 @@ for item in response["items"]:
 conn.commit()
 conn.close()
 
-print("All comments saved to database!")
+print("All comments processed successfully!")
