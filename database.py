@@ -9,7 +9,6 @@ CREATE TABLE IF NOT EXISTS comments(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     comment TEXT,
     reply TEXT,
-    sentiment TEXT,
     video_id TEXT
 )
 """)
