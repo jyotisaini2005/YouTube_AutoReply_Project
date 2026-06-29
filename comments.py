@@ -1,7 +1,6 @@
 from googleapiclient.discovery import build
 from config import API_KEY
-from auto_reply import get_reply
-import sqlite3
+from save_data import save_comment
 
 youtube = build(
     "youtube",
@@ -14,46 +13,34 @@ video_id = input("Enter Video ID: ")
 request = youtube.commentThreads().list(
     part="snippet",
     videoId=video_id,
-    maxResults=10
+    maxResults=20,
+    textFormat="plainText"
 )
 
 response = request.execute()
 
-conn = sqlite3.connect("youtube.db")
-cursor = conn.cursor()
+print("\n========== COMMENTS ==========\n")
 
 for item in response["items"]:
 
+    comment_id = item["id"]
+
     comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
 
-    reply = get_reply(comment)
+    author = item["snippet"]["topLevelComment"]["snippet"]["authorDisplayName"]
 
-    # Check duplicate comment
-    cursor.execute(
-        "SELECT * FROM comments WHERE comment=? AND video_id=?",
-        (comment, video_id)
+    time = item["snippet"]["topLevelComment"]["snippet"]["publishedAt"]
+
+    print(f"Author : {author}")
+    print(f"Comment: {comment}")
+    print("----------------------------")
+
+    save_comment(
+        comment_id,
+        video_id,
+        author,
+        comment,
+        time
     )
 
-    existing_comment = cursor.fetchone()
-
-    if existing_comment is None:
-
-        cursor.execute(
-            "INSERT INTO comments(comment, reply, video_id) VALUES (?, ?, ?)",
-            (comment, reply, video_id)
-        )
-
-        print("Saved to Database")
-
-    else:
-
-        print("Duplicate Comment Skipped")
-
-    print("Comment:", comment)
-    print("Reply:", reply)
-    print("----------------")
-
-conn.commit()
-conn.close()
-
-print("All comments processed successfully!")
+print("\n✅ Comments saved successfully.")
