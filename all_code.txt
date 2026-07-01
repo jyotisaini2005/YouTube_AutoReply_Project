@@ -1,0 +1,572 @@
+
+===== ./save_data.py =====
+import sqlite3
+
+DB_NAME = "youtube.db"
+
+
+def create_tables():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    # Keywords Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS keywords(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        keyword TEXT,
+        search_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    # Videos Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS videos(
+        video_id TEXT PRIMARY KEY,
+        title TEXT,
+        channel_name TEXT,
+        published_at TEXT,
+        keyword TEXT
+    )
+    """)
+
+    # Comments Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS comments(
+        comment_id TEXT PRIMARY KEY,
+        video_id TEXT,
+        author TEXT,
+        comment TEXT,
+        timestamp TEXT,
+        processed INTEGER DEFAULT 0
+    )
+    """)
+
+    # Replies Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS replies(
+        reply_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        comment_id TEXT,
+        reply_text TEXT,
+        status TEXT,
+        posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def save_keyword(keyword):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "INSERT INTO keywords(keyword) VALUES(?)",
+        (keyword,)
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def save_video(video_id, title, channel_name, published_at, keyword):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    INSERT OR IGNORE INTO videos
+    (video_id, title, channel_name, published_at, keyword)
+    VALUES (?, ?, ?, ?, ?)
+    """, (video_id, title, channel_name, published_at, keyword))
+
+    conn.commit()
+    conn.close()
+
+
+def save_comment(comment_id, video_id, author, comment, timestamp):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    INSERT OR IGNORE INTO comments
+    (comment_id, video_id, author, comment, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    """, (comment_id, video_id, author, comment, timestamp))
+
+    conn.commit()
+    conn.close()
+
+
+def save_reply(comment_id, reply_text, status="Pending"):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    INSERT INTO replies
+    (comment_id, reply_text, status)
+    VALUES (?, ?, ?)
+    """, (comment_id, reply_text, status))
+
+    conn.commit()
+    conn.close()
+
+
+if __name__ == "__main__":
+    create_tables()
+    print("✅ Database Created Successfully")
+
+
+===== ./view_data.py =====
+import sqlite3
+
+conn = sqlite3.connect("youtube.db")
+cursor = conn.cursor()
+
+cursor.execute("SELECT * FROM comments")
+rows = cursor.fetchall()
+
+for row in rows:
+    print("ID:", row[0])
+    print("Comment:", row[1])
+    print("Reply:", row[2])
+    print("Video ID:", row[3])
+    print("--------------------------------")
+
+conn.close()
+
+
+===== ./config.py =====
+API_KEY = "AIzaSyBpjKR5mCt88mlHo4U0wALe-FBHevjeKrQ"
+
+
+
+===== ./auto_reply.py =====
+import json
+import random
+
+with open("keywords.json", "r", encoding="utf-8") as file:
+    keywords = json.load(file)
+
+default_replies = [
+    "Thank you for your comment 😊",
+    "Thank you for your valuable feedback 🌱",
+    "We appreciate your support 🌳",
+    "Thank you for supporting Tree Kisan 🚜",
+    "Your feedback is valuable to us 🌟"
+]
+
+def get_reply(comment):
+    comment = comment.lower()
+
+    for keyword, reply in keywords.items():
+        if keyword.lower() in comment:
+            return reply
+
+    return random.choice(default_replies)
+
+if __name__ == "__main__":
+    comment = input("Enter Comment: ")
+    print("Auto Reply:", get_reply(comment))
+
+
+===== ./database.py =====
+import sqlite3
+
+conn = sqlite3.connect("youtube.db")
+
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS comments(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    comment TEXT,
+    reply TEXT,
+    video_id TEXT
+)
+""")
+
+conn.commit()
+
+print("Database Created Successfully!")
+
+conn.close()
+
+
+===== ./search_video.py =====
+from googleapiclient.discovery import build
+from config import API_KEY
+from save_data import save_keyword, save_video
+
+# YouTube API
+youtube = build(
+    "youtube",
+    "v3",
+    developerKey=API_KEY
+)
+
+# User Input
+keyword = input("Enter keyword to search: ")
+
+# Save searched keyword
+save_keyword(keyword)
+
+# Search Videos
+request = youtube.search().list(
+    part="snippet",
+    q=keyword,
+    type="video",
+    maxResults=10,
+    order="relevance"
+)
+
+response = request.execute()
+
+print("\n=========== Videos Found ===========\n")
+
+for item in response["items"]:
+
+    video_id = item["id"]["videoId"]
+    title = item["snippet"]["title"]
+    channel = item["snippet"]["channelTitle"]
+    published = item["snippet"]["publishedAt"]
+
+    print(f"Title      : {title}")
+    print(f"Video ID   : {video_id}")
+    print(f"Channel    : {channel}")
+    print(f"Published  : {published}")
+    print("-------------------------------------------")
+
+    # Save Video in Database
+    save_video(
+        video_id,
+        title,
+        channel,
+        published,
+        keyword
+    )
+
+print("\n✅ All videos saved into database successfully.")
+
+
+===== ./app.py =====
+import streamlit as st
+import sqlite3
+from youtube_service import fetch_comments
+
+st.set_page_config(
+    page_title="YouTube Auto Reply System",
+    page_icon="🎥",
+    layout="wide"
+)
+
+st.title("🎥 YouTube Auto Reply System")
+st.markdown("Fetch comments, generate replies, and manage history.")
+
+st.subheader("🔗 Enter YouTube Video Link")
+
+link = st.text_input("Paste YouTube Video Link")
+
+video_id = ""
+
+if "v=" in link:
+    video_id = link.split("v=")[1].split("&")[0]
+    st.success(f"Video ID Extracted: {video_id}")
+
+elif "youtu.be/" in link:
+    video_id = link.split("youtu.be/")[1].split("?")[0]
+    st.success(f"Video ID Extracted: {video_id}")
+
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("Fetch Comments"):
+
+        if video_id == "":
+            st.error("Please enter a valid YouTube link!")
+
+        else:
+            comments = fetch_comments(video_id)
+
+            st.success("Comments fetched successfully!")
+
+            st.subheader("Comments & Replies")
+
+            for comment, reply in comments:
+                st.write("Comment:", comment)
+                st.write("Reply:", reply)
+                st.write("------------------------")
+with col2:
+    if st.button("Show History"):
+
+        if video_id == "":
+            st.error("Please enter a valid YouTube link!")
+
+        else:
+
+            conn = sqlite3.connect("youtube.db")
+            cursor = conn.cursor()
+
+            cursor.execute(
+                "SELECT * FROM comments WHERE video_id=?",
+                (video_id,)
+            )
+
+            rows = cursor.fetchall()
+
+            if rows:
+
+                st.subheader("Comment Statistics")
+
+                total_comments = len(rows)
+                custom_replies = 0
+                default_replies = 0
+
+                for row in rows:
+
+                    if row[2] == "Thank you for your comment 😊":
+                        default_replies += 1
+                    else:
+                        custom_replies += 1
+
+                st.write("Total Comments:", total_comments)
+                st.write("Custom Replies:", custom_replies)
+                st.write("Default Replies:", default_replies)
+
+                st.write("-----------------------------------")
+                st.subheader("Comment History")
+
+                for row in rows:
+
+                    st.write("ID:", row[0])
+                    st.write("Comment:", row[1])
+                    st.write("Reply:", row[2])
+                    st.write("Video ID:", row[3])
+
+                    st.write("------------------------")
+
+            else:
+                st.warning("No records found!")
+
+            conn.close()
+
+st.write("-----------------------------------")
+st.caption("YouTube Auto Reply Project | Python + SQLite + Streamlit")
+
+
+===== ./youtube_service.py =====
+from googleapiclient.discovery import build
+from config import API_KEY
+from auto_reply import get_reply
+import sqlite3
+
+youtube = build(
+    "youtube",
+    "v3",
+    developerKey=API_KEY
+)
+
+def fetch_comments(video_id):
+
+    request = youtube.commentThreads().list(
+        part="snippet",
+        videoId=video_id,
+        maxResults=10
+    )
+
+    response = request.execute()
+
+    conn = sqlite3.connect("youtube.db")
+    cursor = conn.cursor()
+
+    results = []
+
+    for item in response["items"]:
+
+        comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
+
+        reply = get_reply(comment)
+
+        cursor.execute(
+            "INSERT INTO comments(comment, reply, video_id) VALUES (?, ?, ?)",
+            (comment, reply, video_id)
+        )
+
+        results.append((comment, reply))
+
+    conn.commit()
+    conn.close()
+
+    return results
+
+
+===== ./export_csv.py =====
+import sqlite3
+import pandas as pd
+
+conn = sqlite3.connect("youtube.db")
+
+query = "SELECT * FROM comments"
+
+df = pd.read_sql_query(query, conn)
+
+df.to_csv("comments_history.csv", index=False)
+
+print("CSV File Created Successfully!")
+
+conn.close()
+
+
+===== ./comment_analysis.py =====
+from googleapiclient.discovery import build
+from textblob import TextBlob
+from config import API_KEY
+
+youtube = build(
+    "youtube",
+    "v3",
+    developerKey=API_KEY
+)
+
+video_id = input("Enter Video ID: ")
+
+request = youtube.commentThreads().list(
+    part="snippet",
+    videoId=video_id,
+    maxResults=100
+)
+
+response = request.execute()
+
+total_comments = 0
+positive_comments = 0
+negative_comments = 0
+
+for item in response["items"]:
+
+    comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
+
+    polarity = TextBlob(comment).sentiment.polarity
+
+    total_comments += 1
+
+    if polarity > 0:
+        positive_comments += 1
+    elif polarity < 0:
+        negative_comments += 1
+print("\nComment Analysis")
+print("----------------------")
+print("Total Comments:", total_comments)
+print("Positive Comments:", positive_comments)
+print("Negative Comments:", negative_comments)
+
+
+===== ./main.py =====
+print("Project Setup Successful")
+
+
+===== ./video_details.py =====
+from googleapiclient.discovery import build
+from config import API_KEY
+
+youtube = build(
+    "youtube",
+    "v3",
+    developerKey=API_KEY
+)
+
+video_id = input("Enter Video ID: ")
+
+request = youtube.videos().list(
+    part="snippet,statistics",
+    id=video_id
+)
+
+response = request.execute()
+
+video = response["items"][0]
+
+print("\nVideo Details")
+print("---------------------")
+print("Title:", video["snippet"]["title"])
+print("Channel Name:", video["snippet"]["channelTitle"])
+print("Views:", video["statistics"].get("viewCount", "N/A"))
+print("Likes:", video["statistics"].get("likeCount", "N/A"))
+print("Publish Date:", video["snippet"]["publishedAt"])
+
+
+===== ./comments.py =====
+from googleapiclient.discovery import build
+from config import API_KEY
+from save_data import save_comment
+
+youtube = build(
+    "youtube",
+    "v3",
+    developerKey=API_KEY
+)
+
+video_id = input("Enter Video ID: ")
+
+request = youtube.commentThreads().list(
+    part="snippet",
+    videoId=video_id,
+    maxResults=20,
+    textFormat="plainText"
+)
+
+response = request.execute()
+
+print("\n========== COMMENTS ==========\n")
+
+for item in response["items"]:
+
+    comment_id = item["id"]
+
+    comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
+
+    author = item["snippet"]["topLevelComment"]["snippet"]["authorDisplayName"]
+
+    time = item["snippet"]["topLevelComment"]["snippet"]["publishedAt"]
+
+    print(f"Author : {author}")
+    print(f"Comment: {comment}")
+    print("----------------------------")
+
+    save_comment(
+        comment_id,
+        video_id,
+        author,
+        comment,
+        time
+    )
+
+print("\n✅ Comments saved successfully.")
+
+
+===== ./fetch_comments.py =====
+from googleapiclient.discovery import build
+from config import API_KEY
+
+youtube = build(
+    "youtube",
+    "v3",
+    developerKey=API_KEY
+)
+
+video_id = input("Enter Video ID: ")
+
+request = youtube.commentThreads().list(
+    part="snippet",
+    videoId=video_id,
+    maxResults=10,
+    textFormat="plainText"
+)
+
+response = request.execute()
+
+print("\nComments:\n")
+
+for item in response["items"]:
+    comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
+    print(comment)
+    print("-" * 50)
+

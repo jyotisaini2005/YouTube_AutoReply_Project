@@ -1,0 +1,7 @@
+streamlit==1.58.0
+google-api-python-client==2.197.0
+google-auth==2.53.0
+pandas==2.3.2
+textblob==0.20.0
+matplotlib==3.10.5
+google-generativeai==0.8.5
